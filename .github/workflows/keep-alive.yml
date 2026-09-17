@@ -11,4 +11,4 @@ jobs:
       - name: Ping the project's own API
         run: |
           URL=$(grep "SUPABASE_URL" config.js | sed -E 's/.*"([^"]*)".*/\1/')
-KEY=$(grep "SUPABASE_ANON_KEY" config.js | sed -E 's/.*"([^"]*)".*/\1/')
+          KEY=$(grep "SUPABASE_ANON_KEY" config.js | sed -E 's/.*"([^"]*)".*/\1/')
