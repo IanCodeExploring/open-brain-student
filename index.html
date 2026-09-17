@@ -130,7 +130,6 @@
   .row { display: flex; gap: 8px; }
   .row button { flex: 1; }
 
-  /* Auth screen */
   #authScreen {
     min-height: 100vh;
     display: flex;
@@ -175,7 +174,6 @@
     <button class="tab" data-tab="recent">🕓 Recent</button>
   </div>
 
-  <!-- VOICE -->
   <div class="panel active" id="panel-voice">
     <div class="card">
       <p class="hint">Tap the mic, speak your thought, then review and save.</p>
@@ -187,7 +185,6 @@
     </div>
   </div>
 
-  <!-- YOUTUBE -->
   <div class="panel" id="panel-youtube">
     <div class="card">
       <p class="hint">Paste a YouTube link, then copy the transcript from YouTube and paste it below.</p>
@@ -204,7 +201,6 @@
     </div>
   </div>
 
-  <!-- PDF -->
   <div class="panel" id="panel-pdf">
     <div class="card">
       <div class="drop-zone" id="pdfDropZone">
@@ -219,7 +215,6 @@
     </div>
   </div>
 
-  <!-- URL -->
   <div class="panel" id="panel-url">
     <div class="card">
       <p class="hint">Browsers won't let this page fetch another site's article automatically. Paste the URL and the article text yourself.</p>
@@ -230,7 +225,6 @@
     </div>
   </div>
 
-  <!-- SEARCH -->
   <div class="panel" id="panel-search">
     <div class="card">
       <div class="row">
@@ -244,15 +238,13 @@
     <div id="searchResults"></div>
   </div>
 
-  <!-- RECENT -->
   <div class="panel" id="panel-recent">
     <div id="recentResults"></div>
   </div>
 </div>
 
 <script>
-// ---------- Setup ----------
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 let currentUser = null;
 
 function decodeEntities(text) {
@@ -268,11 +260,10 @@ function decodeEntities(text) {
   };
   let out = text;
   for (const [ent, ch] of Object.entries(map)) out = out.split(ent).join(ch);
-  out = out.split('&amp;').join('&'); // decode last, always
+  out = out.split('&amp;').join('&');
   return out;
 }
 
-// ---------- Auth ----------
 const authScreen = document.getElementById('authScreen');
 const appScreen = document.getElementById('appScreen');
 let isSignUpMode = false;
@@ -292,10 +283,10 @@ document.getElementById('authSubmit').addEventListener('click', async () => {
   if (!email || !password) { errEl.textContent = 'Enter an email and password.'; return; }
   try {
     if (isSignUpMode) {
-      const { error } = await supabase.auth.signUp({ email, password });
+      const { error } = await sb.auth.signUp({ email, password });
       if (error) throw error;
     } else {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      const { error } = await sb.auth.signInWithPassword({ email, password });
       if (error) throw error;
     }
   } catch (e) {
@@ -304,10 +295,10 @@ document.getElementById('authSubmit').addEventListener('click', async () => {
 });
 
 document.getElementById('signOutBtn').addEventListener('click', async () => {
-  await supabase.auth.signOut();
+  await sb.auth.signOut();
 });
 
-supabase.auth.onAuthStateChange((event, session) => {
+sb.auth.onAuthStateChange((event, session) => {
   currentUser = session ? session.user : null;
   if (currentUser) {
     authScreen.hidden = true;
@@ -320,18 +311,17 @@ supabase.auth.onAuthStateChange((event, session) => {
   }
 });
 
-supabase.auth.getSession().then(({ data }) => {
+sb.auth.getSession().then(({ data }) => {
   currentUser = data.session ? data.session.user : null;
   if (currentUser) { authScreen.hidden = true; appScreen.hidden = false; checkConnection(); loadRecent(); }
   else { authScreen.hidden = false; appScreen.hidden = true; }
 });
 
-// ---------- Connection status ----------
 async function checkConnection() {
   const dot = document.getElementById('statusDot');
   const text = document.getElementById('statusText');
   try {
-    const { error } = await supabase.from('thoughts').select('id').limit(1);
+    const { error } = await sb.from('thoughts').select('id').limit(1);
     if (error) throw error;
     dot.className = 'dot ok'; text.textContent = 'Connected';
   } catch (e) {
@@ -339,7 +329,6 @@ async function checkConnection() {
   }
 }
 
-// ---------- Tabs ----------
 document.querySelectorAll('.tab').forEach(btn => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
@@ -350,9 +339,8 @@ document.querySelectorAll('.tab').forEach(btn => {
   });
 });
 
-// ---------- Save helper ----------
 async function saveThought(content, metadata) {
-  const { data, error } = await supabase
+  const { data, error } = await sb
     .from('thoughts')
     .insert({ content, user_id: currentUser.id, metadata: metadata || {} })
     .select()
@@ -363,7 +351,7 @@ async function saveThought(content, metadata) {
 
 async function saveSource(thoughtId, sourceText, sourceKind) {
   try {
-    const { error } = await supabase.from('thought_sources').insert({
+    const { error } = await sb.from('thought_sources').insert({
       thought_id: thoughtId,
       user_id: currentUser.id,
       source_text: sourceText,
@@ -388,7 +376,6 @@ function escapeHtml(s) {
   return (s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
-// ---------- VOICE ----------
 let recognition = null;
 let isListening = false;
 const micBtn = document.getElementById('micBtn');
@@ -445,7 +432,6 @@ document.getElementById('voiceSave').addEventListener('click', async () => {
   } catch (e) { errEl.textContent = e.message; }
 });
 
-// ---------- YOUTUBE ----------
 function extractVideoId(url) {
   const patterns = [
     /(?:youtube\.com\/watch\?v=)([\w-]{11})/,
@@ -502,7 +488,6 @@ document.getElementById('ytSave').addEventListener('click', async () => {
   } catch (e) { errEl.textContent = e.message; }
 });
 
-// ---------- PDF ----------
 const pdfScript = document.createElement('script');
 pdfScript.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
 document.head.appendChild(pdfScript);
@@ -565,7 +550,6 @@ document.getElementById('pdfSave').addEventListener('click', async () => {
   } catch (e) { errEl.textContent = e.message; }
 });
 
-// ---------- URL ----------
 document.getElementById('urlSave').addEventListener('click', async () => {
   const url = document.getElementById('urlField').value.trim();
   const text = decodeEntities(document.getElementById('urlContent').value.trim());
@@ -581,13 +565,12 @@ document.getElementById('urlSave').addEventListener('click', async () => {
   } catch (e) { errEl.textContent = e.message; }
 });
 
-// ---------- SEARCH ----------
 document.getElementById('searchBtn').addEventListener('click', async () => {
   const q = document.getElementById('searchInput').value.trim();
   const resultsEl = document.getElementById('searchResults');
   resultsEl.innerHTML = '';
   if (!q) return;
-  const { data, error } = await supabase
+  const { data, error } = await sb
     .from('thoughts')
     .select('*')
     .ilike('content', '%' + q + '%')
@@ -602,10 +585,9 @@ document.getElementById('searchClear').addEventListener('click', () => {
   document.getElementById('searchResults').innerHTML = '';
 });
 
-// ---------- RECENT ----------
 async function loadRecent() {
   const resultsEl = document.getElementById('recentResults');
-  const { data, error } = await supabase
+  const { data, error } = await sb
     .from('thoughts')
     .select('*')
     .order('created_at', { ascending: false })
@@ -616,7 +598,6 @@ async function loadRecent() {
   data.forEach(t => resultsEl.appendChild(renderCard(t)));
 }
 
-// ---------- PWA ----------
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js').catch(e => console.warn('SW registration failed:', e));
 }
