@@ -186,18 +186,12 @@
     </div>
   </div>
 
-  <div class="panel" id="panel-youtube">
+    <div class="panel" id="panel-youtube">
     <div class="card">
-      <p class="hint">Paste a YouTube link, then copy the transcript from YouTube and paste it below.</p>
+      <p class="hint">Paste a YouTube link. The transcript is fetched automatically.</p>
       <input type="url" id="ytUrl" placeholder="https://www.youtube.com/watch?v=...">
-      <button class="secondary" id="ytLoad">Load Video Info</button>
+      <button class="primary" id="ytSave">Capture Video</button>
       <div id="ytPreview"></div>
-      <a id="ytTranscriptLink" href="#" target="_blank" style="display:none">
-        <button class="secondary" style="width:100%;margin-top:8px">Open video to get transcript ↗</button>
-      </a>
-      <p class="hint" style="margin-top:10px">On the video page, click the "..." below the video → Show transcript. Copy it, then paste here:</p>
-      <textarea id="ytTranscript" placeholder="Paste the transcript here..."></textarea>
-      <button class="primary" id="ytSave">Save Transcript</button>
       <div class="error" id="ytError"></div>
     </div>
   </div>
@@ -216,12 +210,12 @@
     </div>
   </div>
 
-  <div class="panel" id="panel-url">
+    <div class="panel" id="panel-url">
     <div class="card">
-      <p class="hint">Browsers won't let this page fetch another site's article automatically. Paste the URL and the article text yourself.</p>
+      <p class="hint">Paste any article link. The text is fetched automatically.</p>
       <input type="url" id="urlField" placeholder="https://example.com/article">
-      <textarea id="urlContent" placeholder="Paste the article text here..."></textarea>
-      <button class="primary" id="urlSave">Save Article</button>
+      <button class="primary" id="urlSave">Capture Article</button>
+      <div id="urlPreview"></div>
       <div class="error" id="urlError"></div>
     </div>
   </div>
@@ -449,44 +443,30 @@ function extractVideoId(url) {
 let currentVideoId = null;
 let currentVideoTitle = '';
 
-document.getElementById('ytLoad').addEventListener('click', async () => {
+document.getElementById('ytSave').addEventListener('click', async () => {
   const url = document.getElementById('ytUrl').value.trim();
   const errEl = document.getElementById('ytError');
+  const previewEl = document.getElementById('ytPreview');
+  const btn = document.getElementById('ytSave');
   errEl.textContent = '';
-  const id = extractVideoId(url);
-  if (!id) { errEl.textContent = 'Could not find a video ID in that URL.'; return; }
-  currentVideoId = id;
+  previewEl.innerHTML = '';
+  if (!url) { errEl.textContent = 'Paste a YouTube link first.'; return; }
+
+  btn.disabled = true;
+  btn.textContent = 'Fetching transcript…';
   try {
-    const res = await fetch('https://www.youtube.com/oembed?url=' + encodeURIComponent(url) + '&format=json');
-    if (!res.ok) throw new Error('Could not load video info.');
-    const data = await res.json();
-    currentVideoTitle = decodeEntities(data.title || '');
-    document.getElementById('ytPreview').innerHTML =
-      `<img class="thumb" src="${data.thumbnail_url}"><div>${escapeHtml(currentVideoTitle)}</div>`;
-    const link = document.getElementById('ytTranscriptLink');
-    link.href = 'https://www.youtube.com/watch?v=' + id;
-    link.style.display = 'block';
+    const { data, error } = await sb.functions.invoke('capture-youtube', { body: { url } });
+    if (error) throw error;
+    if (!data.ok) throw new Error(data.error || 'Capture failed.');
+    previewEl.innerHTML = `Saved: <strong>${data.title}</strong>` +
+      (data.has_transcript ? '' : ' <span class="hint">(no transcript found — used description)</span>');
+    document.getElementById('ytUrl').value = '';
   } catch (e) {
     errEl.textContent = e.message;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Capture Video';
   }
-});
-
-document.getElementById('ytSave').addEventListener('click', async () => {
-  const transcript = decodeEntities(document.getElementById('ytTranscript').value.trim());
-  const errEl = document.getElementById('ytError');
-  errEl.textContent = '';
-  if (!currentVideoId) { errEl.textContent = 'Load a video first.'; return; }
-  if (!transcript) { errEl.textContent = 'Paste the transcript before saving.'; return; }
-  try {
-    const title = currentVideoTitle || 'YouTube video';
-    const thought = await saveThought('📹 YouTube: ' + title + '\n\n' + transcript, { video_id: currentVideoId });
-    await saveSource(thought.id, transcript, 'youtube_transcript');
-    document.getElementById('ytTranscript').value = '';
-    document.getElementById('ytUrl').value = '';
-    document.getElementById('ytPreview').innerHTML = '';
-    document.getElementById('ytTranscriptLink').style.display = 'none';
-    currentVideoId = null;
-  } catch (e) { errEl.textContent = e.message; }
 });
 
 const pdfScript = document.createElement('script');
@@ -553,17 +533,27 @@ document.getElementById('pdfSave').addEventListener('click', async () => {
 
 document.getElementById('urlSave').addEventListener('click', async () => {
   const url = document.getElementById('urlField').value.trim();
-  const text = decodeEntities(document.getElementById('urlContent').value.trim());
   const errEl = document.getElementById('urlError');
+  const previewEl = document.getElementById('urlPreview');
+  const btn = document.getElementById('urlSave');
   errEl.textContent = '';
+  previewEl.innerHTML = '';
   if (!url) { errEl.textContent = 'Enter the article URL.'; return; }
-  if (!text) { errEl.textContent = 'Paste the article text.'; return; }
+
+  btn.disabled = true;
+  btn.textContent = 'Fetching article…';
   try {
-    const thought = await saveThought('🔗 URL: ' + url + '\n\n' + text, { url });
-    await saveSource(thought.id, text, 'web');
+    const { data, error } = await sb.functions.invoke('capture-url', { body: { url } });
+    if (error) throw error;
+    if (!data.ok) throw new Error(data.error || 'Capture failed.');
+    previewEl.innerHTML = `Saved: <strong>${data.title}</strong>`;
     document.getElementById('urlField').value = '';
-    document.getElementById('urlContent').value = '';
-  } catch (e) { errEl.textContent = e.message; }
+  } catch (e) {
+    errEl.textContent = e.message;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Capture Article';
+  }
 });
 
 document.getElementById('searchBtn').addEventListener('click', async () => {
