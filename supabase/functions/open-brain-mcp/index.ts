@@ -1,6 +1,10 @@
 // open-brain-mcp: An MCP (Model Context Protocol) server for your Open Brain.
 // This lets any MCP-compatible AI (like Claude Desktop) search, list, and add
 // to your thoughts database through a standard protocol.
+//
+// Access control: this server only responds if the request's web address
+// ends with your secret token (MCP_URL_TOKEN). Anyone without that exact
+// address cannot reach your data.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
@@ -13,9 +17,10 @@ const corsHeaders = {
 
 // These come from Deno's environment automatically (SUPABASE_URL and
 // SUPABASE_SERVICE_ROLE_KEY are injected by Supabase for every edge function —
-// you never set them yourself).
+// you never set them yourself). MCP_URL_TOKEN is the secret you just created.
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const MCP_URL_TOKEN = Deno.env.get("MCP_URL_TOKEN")!;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
@@ -85,17 +90,25 @@ Deno.serve(async (req: Request) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  // --- Access control: check the secret token in the URL path ---
+  const url = new URL(req.url);
+  const pathSegments = url.pathname.split("/").filter(Boolean);
+  const providedToken = pathSegments[pathSegments.length - 1];
+
+  if (!MCP_URL_TOKEN || providedToken !== MCP_URL_TOKEN) {
+    // Deliberately vague error — doesn't hint that a token even exists.
+    return new Response("Not found", {
+      status: 404,
+      headers: corsHeaders,
+    });
+  }
+
   if (req.method !== "POST") {
     return new Response(
       JSON.stringify(rpcError(null, -32600, "Only POST is supported")),
       { status: 405, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   }
-
-  // Note: this server intentionally does not require a password/header to
-  // connect. Claude's custom connector screen doesn't yet support sending a
-  // static secret key, so this server relies on its web address itself being
-  // private. Don't share this URL publicly.
 
   let body: any;
   try {
