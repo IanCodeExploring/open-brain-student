@@ -3,6 +3,7 @@
 // It always returns 200, because a webhook function should never fail loudly.
 
 import { createClient } from 'npm:@supabase/supabase-js@2'
+import { saveThoughtChunksSafe } from '../_shared/thought-chunks.ts'
 
 const CATEGORIES = ['idea', 'learning', 'question', 'reference', 'plan', 'reflection']
 
@@ -147,6 +148,26 @@ Return exactly this shape:
 
         if (linkError) console.error('thought_links upsert failed', linkError)
       }
+    }
+
+    // Chunk it, if it's long enough to be worth it.
+    // `content` here is capped at 4000 chars by capture-url/capture-youtube, so it is not
+    // reliably the full document — chunk it under origin 'summary' regardless, since it is
+    // what search shows and links off of, but ALSO look for a thought_sources row and chunk
+    // the untruncated original under origin 'source'. Without this second pass, a detail past
+    // character 4000 of a long transcript was captured but never became searchable.
+    await saveThoughtChunksSafe(supabase, record.id, content, 'enrich-thought', 'summary')
+
+    const { data: sourceRow, error: sourceFetchError } = await supabase
+      .from('thought_sources')
+      .select('source_text')
+      .eq('thought_id', record.id)
+      .maybeSingle()
+
+    if (sourceFetchError) {
+      console.error('thought_sources lookup failed', sourceFetchError)
+    } else if (sourceRow?.source_text) {
+      await saveThoughtChunksSafe(supabase, record.id, sourceRow.source_text, 'enrich-thought', 'source')
     }
 
     return ok('enriched')

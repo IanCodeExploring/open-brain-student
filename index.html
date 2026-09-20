@@ -364,7 +364,14 @@ function renderCard(t) {
   const div = document.createElement('div');
   div.className = 'card thought-card';
   const date = new Date(t.created_at).toLocaleString();
-  div.innerHTML = `<div>${escapeHtml(t.content)}</div><div class="thought-meta">${date}</div>`;
+  // matched_excerpt/note are set by search-brain when the best evidence for
+  // a result came from partway through a longer capture (a chunk), rather
+  // than from the thought's own short content - show that instead of (or
+  // alongside) the full thought so it's clear why this result matched.
+  const excerptHtml = t.matched_excerpt
+    ? `<div class="thought-excerpt">${escapeHtml(t.matched_excerpt)}</div><div class="thought-meta">${escapeHtml(t.note || '')}</div>`
+    : '';
+  div.innerHTML = `<div>${escapeHtml(t.content)}</div>${excerptHtml}<div class="thought-meta">${date}</div>`;
   return div;
 }
 function escapeHtml(s) {
@@ -561,15 +568,15 @@ document.getElementById('searchBtn').addEventListener('click', async () => {
   const resultsEl = document.getElementById('searchResults');
   resultsEl.innerHTML = '';
   if (!q) return;
-  const { data, error } = await sb
-    .from('thoughts')
-    .select('*')
-    .ilike('content', '%' + q + '%')
-    .order('created_at', { ascending: false })
-    .limit(50);
+  // search-brain (Level 7) replaces the old plain ilike match: it embeds the
+  // query server-side and calls the hybrid search_thoughts RPC, which fuses
+  // meaning-based and keyword ranking and also searches inside chunks of
+  // long captures, not just each thought's own short content.
+  const { data, error } = await sb.functions.invoke('search-brain', { body: { query: q, limit: 50 } });
   if (error) { resultsEl.innerHTML = `<div class="error">${error.message}</div>`; return; }
-  if (!data.length) { resultsEl.innerHTML = '<p class="hint">No matches found.</p>'; return; }
-  data.forEach(t => resultsEl.appendChild(renderCard(t)));
+  const results = data?.results ?? [];
+  if (!results.length) { resultsEl.innerHTML = '<p class="hint">No matches found.</p>'; return; }
+  results.forEach(t => resultsEl.appendChild(renderCard(t)));
 });
 document.getElementById('searchClear').addEventListener('click', () => {
   document.getElementById('searchInput').value = '';

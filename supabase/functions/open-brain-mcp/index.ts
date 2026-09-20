@@ -21,6 +21,11 @@ const corsHeaders = {
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const MCP_URL_TOKEN = Deno.env.get("MCP_URL_TOKEN")!;
+// The service role key bypasses row-level security entirely, so every query
+// this server makes has to do its own filtering to stay scoped to one
+// person's data. OWNER_USER_ID (set in Level 3 for the Telegram bot) is that
+// person - the only signed-up user of this brain.
+const OWNER_USER_ID = Deno.env.get("OWNER_USER_ID")!;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
@@ -225,10 +230,13 @@ Deno.serve(async (req: Request) => {
 
         if (!embedding) {
           // Fall back to keyword search rather than returning nothing if
-          // embedding generation is ever down.
+          // embedding generation is ever down. Scoped to OWNER_USER_ID for
+          // the same reason as every other query in this file: the service
+          // role key does not go through row-level security.
           const { data, error } = await supabase
             .from("thoughts")
             .select("id, content, created_at")
+            .eq("user_id", OWNER_USER_ID)
             .ilike("content", `%${query}%`)
             .order("created_at", { ascending: false })
             .limit(10);
@@ -248,6 +256,8 @@ Deno.serve(async (req: Request) => {
         }
 
         const { data, error } = await supabase.rpc("search_thoughts", {
+          query_text: query,
+          p_user_id: OWNER_USER_ID,
           query_embedding: embedding,
           match_threshold: 0.3,
           match_count: 10,
@@ -255,7 +265,17 @@ Deno.serve(async (req: Request) => {
 
         if (error) throw error;
 
-        const withLinks = await attachLinkedThoughts(data ?? []);
+        // matched_chunk is set when the best evidence for a result came from
+        // partway through a longer capture, rather than from the thought's
+        // own short content - surface that distinction rather than silently
+        // showing the whole-thought content in both cases.
+        const annotated = (data ?? []).map((r: any) =>
+          r.matched_chunk
+            ? { ...r, matched_excerpt: r.matched_chunk, note: "(from partway through a longer capture)" }
+            : r
+        );
+
+        const withLinks = await attachLinkedThoughts(annotated);
 
         return new Response(
           JSON.stringify(
@@ -272,6 +292,7 @@ Deno.serve(async (req: Request) => {
         const { data, error } = await supabase
           .from("thoughts")
           .select("id, content, created_at")
+          .eq("user_id", OWNER_USER_ID)
           .order("created_at", { ascending: false })
           .limit(limit);
 
@@ -291,7 +312,7 @@ Deno.serve(async (req: Request) => {
         const content = String(args.content ?? "");
         const { data, error } = await supabase
           .from("thoughts")
-          .upsert({ content }, { onConflict: "dedup_key,user_id", ignoreDuplicates: false })
+          .upsert({ content, user_id: OWNER_USER_ID }, { onConflict: "dedup_key,user_id", ignoreDuplicates: false })
           .select("id, content, created_at")
           .single();
 
