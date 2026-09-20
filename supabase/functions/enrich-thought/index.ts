@@ -87,6 +87,68 @@ Return exactly this shape:
       .eq('id', record.id)
 
     if (error) console.error('update failed', error)
+
+    // Generate embedding.
+    // NOTE the Authorization header - it is not optional. One edge function
+    // calling another must prove who it is, or Supabase rejects the call with
+    // a 401 before generate-embedding runs. The symptom of a missing header
+    // is that embeddings silently never appear and the generate-embedding
+    // logs are empty, because it never ran.
+    let embedding: number[] | null = null
+    try {
+      const embRes = await fetch(`${supabaseUrl}/functions/v1/generate-embedding`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${serviceKey}`,
+        },
+        body: JSON.stringify({ text: content }),
+      })
+      const embJson = await embRes.json()
+      embedding = embJson?.embedding ?? null
+    } catch (embErr) {
+      console.error('generate-embedding call failed', embErr)
+    }
+
+    if (embedding) {
+      const { error: embError } = await supabase
+        .from('thoughts')
+        .update({ embedding })
+        .eq('id', record.id)
+      if (embError) console.error('embedding update failed', embError)
+    }
+
+    // Auto-link: find and save neighbors - scoped to the same user as the
+    // thought that was just saved, using the user_id already pulled from
+    // this webhook payload for the enrichment call above.
+    if (embedding) {
+      const { data: neighbors, error: linkRpcError } = await supabase.rpc('find_links_for_thought', {
+        source_id: record.id,
+        source_embedding: embedding,
+        p_user_id: record.user_id,
+        match_threshold: 0.5,
+        match_count: 5,
+      })
+
+      if (linkRpcError) {
+        console.error('find_links_for_thought failed', linkRpcError)
+      } else if (neighbors && neighbors.length > 0) {
+        const links = neighbors.map((n: { target_id: string; similarity: number }) => ({
+          source_thought_id: record.id,
+          target_thought_id: n.target_id,
+          user_id: record.user_id,
+          similarity_score: n.similarity,
+          link_type: 'semantic',
+        }))
+
+        const { error: linkError } = await supabase
+          .from('thought_links')
+          .upsert(links, { onConflict: 'source_thought_id,target_thought_id', ignoreDuplicates: true })
+
+        if (linkError) console.error('thought_links upsert failed', linkError)
+      }
+    }
+
     return ok('enriched')
   } catch (err) {
     console.error('enrich-thought error', err)

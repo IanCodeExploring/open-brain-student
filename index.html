@@ -337,7 +337,7 @@ document.querySelectorAll('.tab').forEach(btn => {
 async function saveThought(content, metadata) {
   const { data, error } = await sb
     .from('thoughts')
-    .insert({ content, user_id: currentUser.id, metadata: metadata || {} })
+    .upsert({ content, user_id: currentUser.id, metadata: metadata || {} }, { onConflict: 'dedup_key,user_id', ignoreDuplicates: false })
     .select()
     .single();
   if (error) throw error;

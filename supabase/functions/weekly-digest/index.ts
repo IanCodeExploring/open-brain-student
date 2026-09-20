@@ -94,14 +94,14 @@ Speak to me directly ("you"). Be concrete and refer to specific notes. Keep it u
 
     // Save the digest as a new thought. It already has a category, so the
     // enrichment agent skips it.
-    const { error: insertError } = await supabase.from('thoughts').insert({
+    const { error: insertError } = await supabase.from('thoughts').upsert({
       content: digestText,
       user_id: userId,
       category: 'digest',
       tags: ['digest', 'weekly'],
       summary: `Weekly digest of ${thoughts.length} thoughts`,
       enriched_at: new Date().toISOString(),
-    })
+    }, { onConflict: 'dedup_key,user_id', ignoreDuplicates: false })
     if (insertError) console.error('insert failed', insertError)
 
     // Optional email via Resend. Does nothing unless both secrets are set.

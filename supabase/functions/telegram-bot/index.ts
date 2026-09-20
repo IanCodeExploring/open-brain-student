@@ -87,10 +87,10 @@ async function handleRecent(chatId: number) {
 }
 
 async function handleSave(chatId: number, text: string) {
-  const { error } = await admin.from("thoughts").insert({
+  const { error } = await admin.from("thoughts").upsert({
     user_id: OWNER_USER_ID,
     content: text,
-  });
+  }, { onConflict: "dedup_key,user_id", ignoreDuplicates: false });
 
   if (error) {
     await sendTelegramMessage(chatId, `Failed to save: ${error.message}`);

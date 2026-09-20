@@ -133,11 +133,11 @@ Deno.serve(async (req: Request) => {
 
     const { data: thought, error: insertError } = await admin
       .from("thoughts")
-      .insert({
+      .upsert({
         user_id: user.id,
         content,
         metadata: { title, url: parsed.toString(), hostname: parsed.hostname },
-      })
+      }, { onConflict: "dedup_key,user_id", ignoreDuplicates: false })
       .select("id")
       .single();
 
