@@ -563,20 +563,34 @@ document.getElementById('urlSave').addEventListener('click', async () => {
   }
 });
 
+const searchBtnEl = document.getElementById('searchBtn');
 document.getElementById('searchBtn').addEventListener('click', async () => {
   const q = document.getElementById('searchInput').value.trim();
   const resultsEl = document.getElementById('searchResults');
-  resultsEl.innerHTML = '';
   if (!q) return;
-  // search-brain (Level 7) replaces the old plain ilike match: it embeds the
-  // query server-side and calls the hybrid search_thoughts RPC, which fuses
-  // meaning-based and keyword ranking and also searches inside chunks of
-  // long captures, not just each thought's own short content.
-  const { data, error } = await sb.functions.invoke('search-brain', { body: { query: q, limit: 50 } });
-  if (error) { resultsEl.innerHTML = `<div class="error">${error.message}</div>`; return; }
-  const results = data?.results ?? [];
-  if (!results.length) { resultsEl.innerHTML = '<p class="hint">No matches found.</p>'; return; }
-  results.forEach(t => resultsEl.appendChild(renderCard(t)));
+  // Disable the button for the duration of the request. Without this, a
+  // double-click (or a slow response and an impatient second click) fires a
+  // second overlapping search; each one clears the box independently but
+  // appends its own results whenever it finishes, so two in-flight searches
+  // both land in the same box and every result shows up twice.
+  searchBtnEl.disabled = true;
+  resultsEl.innerHTML = '<p class="hint">Searching…</p>';
+  try {
+    // search-brain (Level 7) replaces the old plain ilike match: it embeds
+    // the query server-side and calls the hybrid search_thoughts RPC, which
+    // fuses meaning-based and keyword ranking and also searches inside
+    // chunks of long captures, not just each thought's own short content.
+    const { data, error } = await sb.functions.invoke('search-brain', { body: { query: q, limit: 50 } });
+    // Clear right before rendering, not before firing the request, so a
+    // stray overlapping call can't leave stale content behind either way.
+    resultsEl.innerHTML = '';
+    if (error) { resultsEl.innerHTML = `<div class="error">${error.message}</div>`; return; }
+    const results = data?.results ?? [];
+    if (!results.length) { resultsEl.innerHTML = '<p class="hint">No matches found.</p>'; return; }
+    results.forEach(t => resultsEl.appendChild(renderCard(t)));
+  } finally {
+    searchBtnEl.disabled = false;
+  }
 });
 document.getElementById('searchClear').addEventListener('click', () => {
   document.getElementById('searchInput').value = '';
